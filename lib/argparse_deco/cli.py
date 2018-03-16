@@ -144,12 +144,21 @@ def run(obj, *args, **kwargs):
     else:
         exit(func(*args, **kwargs))
 
-def main(obj):
+def main(obj_or_name):
     try:
         frm = inspect.stack()[1]
         mod = inspect.getmodule(frm[0])
     except IndexError:
-        return
+        mod = None
 
-    if mod.__name__ == '__main__':
-        run(obj)
+    name = obj_or_name if isinstance(obj_or_name, str) else 'main'
+    def decorator(obj):
+        if mod is not None:
+            setattr(obj, name, lambda: run(obj))
+            if mod.__name__ == '__main__':
+                run(obj)
+        return obj
+
+    if isinstance(obj_or_name, str):
+        return decorator
+    return decorator(obj_or_name)
