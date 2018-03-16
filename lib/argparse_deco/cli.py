@@ -78,7 +78,8 @@ def parse(obj, parser=None):
 
     if parser is None:
         args, kwargs = cli_options.get('parser', ((), {}))
-        parser = argparse.ArgumentParser(*args, **kwargs)
+        desc = kwargs.pop('description', obj.__doc__)
+        parser = argparse.ArgumentParser(*args, description=desc, **kwargs)
 
     # Setup argument groups
     groups = {}
@@ -117,8 +118,10 @@ def parse(obj, parser=None):
             if not name.startswith('_'):
                 args, kwargs = getattr(subobj, '_cli_options', {}).get(
                     'parser', ((), {}))
+                parser_help = kwargs.pop('help', subobj.__doc__)
                 parse(subobj, subparsers.add_parser(
-                    getattr(subobj, '_alias', name), *args, **kwargs))
+                    getattr(subobj, '_alias', name),
+                    *args, help=parser_help, **kwargs))
     else:
         raise Exception("NIY: "+repr(obj))
     return parser
