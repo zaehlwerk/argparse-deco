@@ -21,9 +21,9 @@
 
 import argparse
 import collections
+import functools
 import inspect
 import sys
-import types
 
 from .compat import Base, OrderedClassMeta
 
@@ -145,18 +145,14 @@ def run(obj, *args, **kwargs):
         exit(func(*args, **kwargs))
 
 def main(obj_or_name):
-    try:
-        frm = inspect.stack()[1]
-        mod = inspect.getmodule(frm[0])
-    except IndexError:
-        mod = None
-
     name = obj_or_name if isinstance(obj_or_name, str) else 'main'
     def decorator(obj):
-        if mod is not None:
-            setattr(obj, name, lambda: run(obj))
-            if mod.__name__ == '__main__':
-                run(obj)
+        try:
+            mod = sys.modules[obj.__module__]
+        except KeyError:
+            pass
+        else:
+            setattr(mod, name, functools.partial(run, obj))
         return obj
 
     if isinstance(obj_or_name, str):
