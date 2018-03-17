@@ -158,17 +158,25 @@ def run(obj, *args, **kwargs):
                 Those can be overwritten by the arguments from
                 the parser. However, if '_override' is a dict
                 in kwargs, those elements will overwrite even these.
+
+    Example:
+    g = run(obj)
+    args, kwargs = next(g)
+    # Do something with the arguments
+    returncode = g.send((args, kwargs))
+
     """
     parser = parse(obj)
     override_kwargs = kwargs.pop('_override', {})
     kwargs.update(vars(parser.parse_args()))
     kwargs.update(override_kwargs)
+    args, kwargs = yield (args, kwargs)
     try:
         func = kwargs.pop('__func')
     except KeyError:
-        parser.print_usage()
+        yield parser.print_usage()
     else:
-        exit(func(*args, **kwargs))
+        yield func(*args, **kwargs)
 
 def main(obj_or_name):
     name = obj_or_name if isinstance(obj_or_name, str) else 'main'
@@ -178,7 +186,17 @@ def main(obj_or_name):
         except KeyError:
             pass
         else:
-            setattr(mod, name, functools.partial(run, obj))
+            def main(hook, *args, **kwargs):
+                g = run(obj, *args, **kwargs)
+                return g.send(hook(*next(g)))
+            main.hook = lambda args, kwargs: (args, kwargs)
+            def hook(h):
+                main.hook = h
+                return h
+            wrapper = functools.wraps(main)(
+                lambda *args, **kwargs: main(main.hook, *args, **kwargs))
+            wrapper.hook = hook
+            setattr(mod, name, wrapper)
         return obj
 
     if isinstance(obj_or_name, str):
