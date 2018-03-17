@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU General Public License
 # along with argparse-deco. If not, see <http://www.gnu.org/licenses/>.
 #
-"""cli.py: Easy CLI tools creation"""
+"""cli.py: Decorator based synctactic sugar for argparse"""
 
 import argparse
 import collections
@@ -31,22 +31,45 @@ __all__ = ('Base', 'parser', 'subparsers',
            'argument', 'group', 'mutually_exclusive',
            'main')
 
-def CliDecorator(deco):
-    def decorator_decorator(*args, **kwargs):
-        def decorator(obj):
-            try:
-                obj._cli_options
-            except AttributeError:
-                obj._cli_options = dict()
-            obj._cli_options[deco.__name__] = deco(
-                obj._cli_options.get(deco.__name__), *args, **kwargs)
-            return obj
-        return decorator
-    return decorator_decorator
+def CliDecorator(deco_or_name):
+    if isinstance(deco_or_name, str):
+        name = deco_or_name
+    else:
+        name = deco_or_name.__name__
+
+    def cli_decorator(deco):
+        def decorator_decorator(*args, **kwargs):
+            def decorator(obj):
+                try:
+                    obj._cli_options
+                except AttributeError:
+                    obj._cli_options = dict()
+                obj._cli_options[name] = deco(
+                    obj._cli_options.get(name), *args, **kwargs)
+                return obj
+            return decorator
+        return decorator_decorator
+
+    if isinstance(deco_or_name, str):
+        return cli_decorator
+    return cli_decorator(deco_or_name)
 
 @CliDecorator
 def parser(option, *args, **kwargs):
-    return (args, kwargs)
+    if option is None:
+        return (args, kwargs)
+    option[1].update(kwargs)
+    return (args, option[1])
+
+@CliDecorator('parser')
+def alias(option, name):
+    if option is None:
+        option = ((), dict(aliases=[name]))
+    elif 'aliases' not in option:
+        option[1]['aliases'] = [name]
+    else:
+        option[1]['aliases'].append(name)
+    return option
 
 @CliDecorator
 def argument(option, *args, **kwargs):

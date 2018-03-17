@@ -9,4 +9,4 @@ Kevin L. Mitchell's **cli_tools**
 code.
 
 Its main difference is the possibility to abuse Python's class
-syntax to define complex CLI tools with serveral subcommands.
+syntax to define complex CLI tools with nested subcommands.
