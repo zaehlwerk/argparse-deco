@@ -33,4 +33,4 @@ class PEP560Meta(type):
         return super().__new__(mcls, name, bases, ns, **kwargs)
 
     def __getitem__(cls, args):
-        return cls.__class_getitem__(*args)
+        return cls.__class_getitem__(args)

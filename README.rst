@@ -16,50 +16,49 @@ Simple CLI
 
 The API suffices to use three imports.
 
->>> from argparse_deco import Cli, Arg, Group
+>>> from argparse_deco import CLI, Arg, Flag
 
-An an example for a simple CLI, one may use `Cli` as decorator for a
+An an example for a simple CLI, one may use `CLI` as decorator for a
 function in order to transform it:
 
->>> @Cli
+>>> @CLI
 ... def prog(
-...         integers: Arg[int](metavar='N', nargs='+',
-...                            help="an integerfor the accumulator"),
+...         integers: Arg(metavar='N', nargs='+', type=int,
+...                       help="an integerfor the accumulator"),
 ...         accumulate: Arg('--sum', action='store_const', const=sum,
 ...                         help="sum the integers (default: find the max)"
 ...                         )=max):
 ...     """Process some integers."""
 ...     print(accumulate(integers))
 
-The decorator `Cli` transforms the function `prog` into a `CliMeta`
-type class having `prog` as its `__call__` method. Effectively `prog`
-takes some command line argument like `[ "1", "2", "4", "--sum" ]` as
-single argument, which is transformed by the `argparse` module into
-arguments `integer` and `accumulate` passed down to the original
-function `prog`:
+The decorator `CLI` transforms the function `prog` into an `Command`
+instance. Effectively `prog` takes some command line argument like
+`[ "1", "2", "4", "--sum" ]` as `cli_args` keyword, which is transformed
+by the `argparse` module into arguments `integer` and `accumulate`
+passed down to the original function `prog`:
 
->>> prog(["1", "2", "4", "--sum"])
+>>> prog(cli_args=["1", "2", "4", "--sum"])
 7
->>> prog(["1", "2", "4"])
+>>> prog(cli_args=["1", "2", "4"])
 4
 
 In order to obtain the `ArgumentParser` instance, `prog` has the class
-method `get_parser`:
+method `setup_parser`:
 
->>> parser = prog.get_parser()
+>>> parser = prog.setup_parser()
 >>> print(parser)
-ArgumentParser(prog='prog', usage=None, description='Process some integers.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+ArgumentParser(prog='pytest', usage=None, description='Process some integers.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
 >>> parser.print_usage()
-usage: prog [-h] [--sum] N [N ...]
+usage: pytest [-h] [--sum] N [N ...]
 
 >>> parser.print_help()
-usage: prog [-h] [--sum] N [N ...]
-
+usage: pytest [-h] [--sum] N [N ...]
+<BLANKLINE>
 Process some integers.
-
+<BLANKLINE>
 positional arguments:
   N           an integerfor the accumulator
-
+<BLANKLINE>
 optional arguments:
   -h, --help  show this help message and exit
   --sum       sum the integers (default: find the max)
@@ -79,7 +78,7 @@ Parser
 
 While the `ArgumentParser` instance's `description` is usually the
 function's docstring, one may want to further customise it using the
-`Cli.parser` decorator which accepts any argument `ArgumentParser`
+`CLI.parser` decorator which accepts any argument `ArgumentParser`
 would.
 
 
@@ -89,29 +88,51 @@ Groups
 Arguments can be groupsed by using the `Group` instead of `Arg` in the
 argument's annotation, which accepts a group name as first keyword and
 the type as second one. The group can be customised (title,
-description) using the `Cli.group` decorator:
+description) using the `CLI.group` decorator:
 
->>> @Cli.group('foo', title="Foo", description="Foo group")
+>>> @CLI.group('foo', title="Foo", description="Foo group")
 ... def prog(
-...         bar: Group['foo', str](help="Bar option"),
-...         baz: Group['foo', int](help="Baz option")):
+...         bar: Arg['foo'](help="Bar option"),
+...         baz: Arg['foo'](help="Baz option")):
 ...     pass
->>> prog.get_parser().print_help()
-usage: prog [-h] bar baz
-
+>>> prog.setup_parser().print_help()
+usage: pytest [-h] bar baz
+<BLANKLINE>
 optional arguments:
   -h, --help  show this help message and exit
-
+<BLANKLINE>
 Foo:
   Foo group
-
+<BLANKLINE>
   bar         Bar option
   baz         Baz option
 
-Similarily using the `Cli.mutually_exclusive` decorator, arguments can
+Similarily using the `CLI.mutually_exclusive` decorator, arguments can
 be turned into a mutually exclusive group.
 
 
 Subcommands
 ===========
 
+>>> @CLI.parser("PROG")
+... @CLI.subparsers(help="sub-command help")
+... class prog:
+...     def __call__(foo: Flag('--foo', help="foo help")):
+...         pass
+...     def a(bar: Arg(type=int, help="bar help")):
+...         """a help"""
+...     def b(baz: Arg('--baz', choices='XYZ', help="baz help")):
+...         """b help"""
+>>> prog.parser.print_help()
+usage: PROG [-h] [--foo] {a,b} ...
+<BLANKLINE>
+positional arguments:
+  {a,b}       sub-command help
+<BLANKLINE>
+optional arguments:
+  -h, --help  show this help message and exit
+  --foo       foo help
+>>> prog.parser.parse_args(['a', '12'])
+Namespace(__func=<function prog.a at 0x...>, bar=12, foo=False)
+>>> prog.parser.parse_args(['--foo', 'b', '--baz', 'Z'])
+Namespace(__func=<function prog.b at 0x...>, baz='Z', foo=True)

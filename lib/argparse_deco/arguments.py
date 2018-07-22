@@ -21,12 +21,19 @@
 
 from .compat import HAS_PY37, PEP560Meta
 
-__all__ = ('Arg', 'Group')
+__all__ = ('Arg', 'Flag', 'Counter')
+
 
 class Arg(metaclass=type if HAS_PY37 else PEP560Meta):
     """Stores argument's options in the annotation"""
 
-    __slots__ = ('name_or_flags', 'kwargs',)
+    __slots__ = ('name_or_flags', 'kwargs', 'group')
+
+    def __class_getitem__(cls, group):
+        """assigns argument to a group"""
+        arg = cls()
+        arg.group = group
+        return arg
 
     def __init__(self, *name_or_flags, **kwargs):
         self.name_or_flags = name_or_flags
@@ -38,33 +45,57 @@ class Arg(metaclass=type if HAS_PY37 else PEP560Meta):
         self.kwargs.update(kwargs)
         return self
 
-    def __class_getitem__(cls, arg_type):
-        return cls(arg_type=arg_type)
+    def __repr__(self) -> str:
+        try:
+            group = f"[{self.group!r}]"
+        except AttributeError:
+            group = ""
 
-    def apply(self, parameter, func):
-        # This function is still a bit hackish
+        def args():
+            for s in self.name_or_flags:
+                yield repr(s)
+            for k, v in self.kwargs.items():
+                yield f"{k}={v}"
+        return f"{type(self).__name__}{group}({', '.join(args())})"
+
+    def apply(self, parser, name: str, default=None) -> None:
         args = self.name_or_flags
         kwargs = self.kwargs
-        arg_type = kwargs.pop('arg_type', None)
-        if arg_type is bool:
-            kwargs['action'] = 'store_true' if parameter.default \
-                               else 'store_false'
-        else:
-            if parameter.default is not parameter.empty:
-                kwargs['default'] = parameter.default
-        if arg_type is not None and \
-             not kwargs.get('action', '').startswith('store'):
-            kwargs['type'] = arg_type
-        kwargs['dest'] = parameter.name
-        func(*args, **kwargs)
+        kwargs['dest'] = name
+        if default:
+            kwargs['default'] = default
+        parser.add_argument(*args, **kwargs)
 
 
-class Group(Arg):
-    """Stores additionally the group association in the annotation"""
+class Flag(Arg):
+    """Flag argument"""
 
-    __slots__ = ('group',)
+    def apply(self, parser, name: str, default=None) -> None:
+        args = self.name_or_flags
+        kwargs = self.kwargs
+        kwargs['dest'] = name
+        kwargs['action'] = 'store_true' if default in (True, None) \
+                           else 'store_false'
+        kwargs['default'] = bool(default)
+        parser.add_argument(*args, **kwargs)
 
-    def __class_getitem__(cls, group: str, arg_type):
-        arg = super().__class_getitem__(arg_type)
-        arg.group = group
-        return arg
+
+class Append(Arg):
+
+    def apply(self, parser, name: str, default=None) -> None:
+        args = self.name_or_flags
+        kwargs = self.kwargs
+        kwargs['dest'] = name
+        kwargs['action'] = 'append'
+        parser.add_argument(*args, **kwargs)
+
+
+class Counter(Arg):
+    """Count flags"""
+
+    def apply(self, parser, name: str, default=None) -> None:
+        args = self.name_or_flags
+        kwargs = self.kwargs
+        kwargs['action'] = 'count'
+        kwargs['dest'] = name
+        parser.add_argument(*args, **kwargs)
