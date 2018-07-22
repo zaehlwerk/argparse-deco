@@ -21,33 +21,16 @@
 
 import sys
 
-__all__ = ('Base',)
 
-if sys.version_info >= (3, 6):
-    # From Python 3.6 class attributes are always ordered.
-    OrderedClassMeta = type
-    Base = object
+HAS_PY37 = sys.version_info >= (3, 7)
 
-else:
-    from collections import OrderedDict
 
-    class OrderedClassMeta(type):
-        @classmethod
-        def __prepare__(mcls, name, bases, **kwds):
-            return OrderedDict()
+class PEP560Meta(type):
 
-        def __new__(mcls, name, bases, ns, **kwds):
-            return super().__new__(mcls, name, bases, dict(ns))
+    def __new__(mcls, name, bases, ns, **kwargs):
+        if '__class_getitem__' in ns:
+            ns['__class_getitem__'] = classmethod(ns['__class_getitem__'])
+        return super().__new__(mcls, name, bases, ns, **kwargs)
 
-        def __init__(cls, name, bases, ns, **kwds):
-            super().__init__(name, bases, ns)
-            cls._ordered_namespace = OrderedDict()
-            for base in bases:
-                try:
-                    cls._ordered_namespace.update(base._ordered_namespace)
-                except AttributeError:
-                    pass
-            cls._ordered_namespace.update(ns)
-
-    class Base(metaclass=OrderedClassMeta):
-        pass
+    def __getitem__(cls, args):
+        return cls.__class_getitem__(*args)

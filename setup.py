@@ -21,14 +21,14 @@
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages
 # To use a consistent encoding
-from codecs import open
+import codecs
 import re
 import os.path
 
 here = os.path.abspath(os.path.dirname(__file__))
 
 version_file = os.path.join(here, 'lib', 'argparse_deco', 'version.py')
-with open(version_file, 'rt') as fp:
+with codecs.open(version_file, 'rt') as fp:
     re_version = re.compile(
         r"""^__version__[ ]*=[ ]*["']{1,3}(.+)["']{1,3}$""")
     for line in fp:
@@ -40,7 +40,7 @@ with open(version_file, 'rt') as fp:
         raise RuntimeError("Cannot find version string in %s" % version_file)
 
 # Get the long description from the README file
-with open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
+with codecs.open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
@@ -70,9 +70,8 @@ setup(
         'Intended Audience :: Developers',
         'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
         'Programming Language :: Python',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: Implementation :: CPython',
         'Programming Language :: Python :: Implementation :: PyPy',
         ],

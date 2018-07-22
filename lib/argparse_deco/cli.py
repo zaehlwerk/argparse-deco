@@ -20,185 +20,240 @@
 """cli.py: Decorator based synctactic sugar for argparse"""
 
 import argparse
-import collections
 import functools
 import inspect
-import sys
+from typing import Any, ClassVar, Dict, List
 
-from .compat import Base, OrderedClassMeta
+from .compat import HAS_PY37, PEP560Meta
+from .utils import ReadonlyAttribute
 
-__all__ = ('Base', 'parser', 'subparsers',
-           'argument', 'group', 'mutually_exclusive',
-           'main')
 
-def CliDecorator(deco_or_name):
-    if isinstance(deco_or_name, str):
-        name = deco_or_name
-    else:
-        name = deco_or_name.__name__
+class Arg(metaclass=type if HAS_PY37 else PEP560Meta):
+    """Stores argument's options in the annotation"""
 
-    def cli_decorator(deco):
-        def decorator_decorator(*args, **kwargs):
-            def decorator(obj):
-                try:
-                    obj._cli_options
-                except AttributeError:
-                    obj._cli_options = dict()
-                obj._cli_options[name] = deco(
-                    obj._cli_options.get(name), *args, **kwargs)
-                return obj
-            return decorator
-        return decorator_decorator
+    __slots__ = ('name_or_flags', 'kwargs',)
 
-    if isinstance(deco_or_name, str):
-        return cli_decorator
-    return cli_decorator(deco_or_name)
+    def __init__(self, *name_or_flags, **kwargs):
+        self.name_or_flags = name_or_flags
+        self.kwargs = kwargs
 
-@CliDecorator
-def parser(option, *args, **kwargs):
-    if option is None:
-        return (args, kwargs)
-    option[1].update(kwargs)
-    return (args, option[1])
+    def __call__(self, *name_or_flags, **kwargs):
+        if name_or_flags:
+            self.name_or_flags = name_or_flags
+        self.kwargs.update(kwargs)
+        return self
 
-@CliDecorator('parser')
-def alias(option, name):
-    if option is None:
-        option = ((), dict(aliases=[name]))
-    elif 'aliases' not in option:
-        option[1]['aliases'] = [name]
-    else:
-        option[1]['aliases'].append(name)
-    return option
+    def __class_getitem__(cls, arg_type):
+        return cls(arg_type=arg_type)
 
-@CliDecorator
-def argument(option, *args, **kwargs):
-    if option is None:
-        return [(args, kwargs)]
-    option.append((args, kwargs))
-    return option
+    def apply(self, parameter, func):
+        # This function is still a bit hackish
+        args = self.name_or_flags
+        kwargs = self.kwargs
+        arg_type = kwargs.pop('arg_type', None)
+        if arg_type is bool:
+            kwargs['action'] = 'store_true' if parameter.default \
+                               else 'store_false'
+        else:
+            if parameter.default is not parameter.empty:
+                kwargs['default'] = parameter.default
+        if arg_type is not None and \
+             not kwargs.get('action', '').startswith('store'):
+            kwargs['type'] = arg_type
+        kwargs['dest'] = parameter.name
+        func(*args, **kwargs)
 
-@CliDecorator
-def group(option, name, title=None, description=None):
-    if option is None:
-        option = collections.OrderedDict()
-    option[name] = dict(title=title, description=description)
-    return option
 
-@CliDecorator
-def mutually_exclusive(option, name, required=False):
-    if option is None:
-        option = {}
-    option[name] = dict(required=required)
-    return option
+class Group(Arg):
+    """Stores additionally the group association in the annotation"""
 
-@CliDecorator
-def subparsers(option, *args, **kwargs):
-    return (args, kwargs)
+    __slots__ = ('group',)
 
-def parse(obj, parser=None):
-    cli_options = getattr(obj, '_cli_options', {})
+    def __class_getitem__(cls, group: str, arg_type):
+        arg = super().__class_getitem__(arg_type)
+        arg.group = group
+        return arg
 
-    if parser is None:
+
+class CliMeta(type):
+
+    def __new__(mcls, name, _, ns, **kwargs):
+        for key, attr in ns.items():
+            if not key.startswith('__') and inspect.isfunction(attr):
+                ns[key] = mcls.wrap_function(attr)
+        ns['__cli_options__'] = dict(parser=((), kwargs))
+        return super().__new__(mcls, name, (), ns)
+
+    @classmethod
+    def wrap_function(mcls, func):
+        return mcls(func.__name__, (Cli,), dict(
+            __cli_options__=getattr(func, '__cli_options__', {}),
+            __module__=func.__module__,
+            __qualname__=func.__qualname__,
+            __doc__=func.__doc__,
+            __call__=func))
+
+    @ReadonlyAttribute
+    def subcommand(cls, command):
+        if not issubclass(command, Cli):
+            command = type(command.__name__, (Cli,), dict(vars(command)))
+        setattr(cls, command.__name__, command)
+        return command
+
+    @ReadonlyAttribute
+    def setup_parser(cls):
+        cli_options = getattr(cls, '__cli_options__', {})
+
+        # setup parser
         args, kwargs = cli_options.get('parser', ((), {}))
-        desc = kwargs.pop('description', obj.__doc__)
-        parser = argparse.ArgumentParser(*args, description=desc, **kwargs)
+        if 'alias' in cli_options:
+            kwargs['aliases'] = cli_options['alias']
+        kwargs['description'] = kwargs.pop('description', cls.__doc__)
+        parser = yield (args, kwargs)
 
-    # Setup argument groups
-    groups = {}
-    for name, kwargs in reversed(list(cli_options.get('group', {}).items())):
-        groups[name] = parser.add_argument_group(**kwargs)
-    for name, kwargs in reversed(list(
-            cli_options.get('mutually_exclusive', {}).items())):
-        if name in groups:
-            raise argparse.ArgumentError(
-                None, "Duplicate group: {}".format(name))
-        groups[name] = parser.add_mutually_exclusive_group(**kwargs)
+        # setup arguments
+        if inspect.isfunction(cls.__call__):
+            signature = inspect.signature(cls.__call__)
+            groups = dict()
+            for name, kwargs in reversed(cli_options.get('group', ())):
+                groups[name] = parser.add_argument_group(**kwargs)
+            for name, kwargs in reversed(
+                    cli_options.get('mutually_exclusive', ())):
+                if name in groups:
+                    raise argparse.ArgumentError(
+                        None,
+                        f"A regular group cannot be mutually exclusive: {name}")
+                groups[name] = parser.add_mutually_exclusive_group(**kwargs)
+            for name, parameter in signature.parameters.items():
+                argument = parameter.annotation
+                if isinstance(argument, Group):
+                    try:
+                        group = groups[argument.group]
+                    except KeyError:
+                        group = parser.add_argument_group()
+                        groups[argument.group] = group
+                    argument.apply(parameter, group.add_argument)
+                elif isinstance(argument, Arg):
+                    argument.apply(parameter, parser.add_argument)
 
-    # Setup arguments group-awarely
-    for args, kwargs in reversed(cli_options.get('argument', [])):
+            # setup default action
+            parser.set_defaults(__func=cls.__call__)
+
+        # process subcommands
+        subbcommands = tuple(
+            (name, command) for name, command in vars(cls).items()
+            if inspect.isclass(command) and issubclass(command, Cli))
+        if 'subparsers' in cli_options or subbcommands:
+            args, kwargs = cli_options.get('subparsers', (((), {}),))[0]
+            subparsers = parser.add_subparsers(*args, **kwargs)
+            for name, command in subbcommands:
+                gen = command.setup_parser()
+                # obtain parser arguments from setup_parser
+                args, kwargs = next(gen)
+                if not args:
+                    args = (name,)
+                # continue setup_parser with parser instance
+                gen.send(subparsers.add_parser(*args, **kwargs))
+
+        yield
+
+    @ReadonlyAttribute
+    def get_parser(cls, factory=argparse.ArgumentParser):
+        gen = cls.setup_parser()
+        args, kwargs = next(gen)
+        parser = factory(*args, **kwargs)
+        gen.send(parser)
+        return parser
+
+    @ReadonlyAttribute
+    def run(cls, *args, parser_kwargs={}, **kwargs):
+        """Parse a Argument Parser definition and run it.
+
+        :params:
+          args:          Run function with these additional positional
+                         arguments.
+          parser_kwargs: Dictionary containing keyword arguments for
+                         ArgumentParser.parse_args.
+          kwargs:        Run function with these additional keyword arguments.
+                         Those can be overwritten by the arguments from
+                         the parser. However, if '_override' is a dict
+                         in kwargs, those elements will overwrite even these.
+
+        Example:
+        g = run(obj)
+        args, kwargs = next(g)
+        # Do something with the arguments
+        returncode = g.send((args, kwargs))
+        """
+        parser = cls.get_parser()
+        override_kwargs = kwargs.pop('_override', {})
+        kwargs.update(vars(parser.parse_args(**parser_kwargs)))
+        kwargs.update(override_kwargs)
+        args, kwargs = yield (args, kwargs)
         try:
-            group = groups[kwargs.pop('group')]
+            func = kwargs.pop('__func')
         except KeyError:
-            parser.add_argument(*args, **kwargs)
+            yield parser.print_usage()
         else:
-            group.add_argument(*args, **kwargs)
+            yield func(*args, **kwargs)
 
-    # Setup default action
-    if inspect.isfunction(obj):
-        parser.set_defaults(__func=obj)
-    elif inspect.isclass(obj):
-        if inspect.isfunction(obj.__call__):
-            parser.set_defaults(__func=obj.__call__)
+    def __call__(cls, *args, parser_kwargs={}, **kwargs):
+        if cls is Cli:
+            return cls.wrap_function(args[0])
+        g = cls.run(*args, parser_kwargs=parser_kwargs, **kwargs)
+        return g.send(next(g))
 
-        # Classes have subcommands
-        args, kwargs = cli_options.get('subparsers', ((), {}))
-        subparsers = parser.add_subparsers(*args, **kwargs)
-        for name, subobj in (
-                obj._ordered_namespace.items()
-                if hasattr(obj, '_ordered_namespace')
-                else inspect.getmembers(obj)):
-            if not name.startswith('_'):
-                args, kwargs = getattr(subobj, '_cli_options', {}).get(
-                    'parser', ((), {}))
-                parser_help = kwargs.pop('help', subobj.__doc__)
-                parse(subobj, subparsers.add_parser(
-                    getattr(subobj, '_alias', name),
-                    *args, help=parser_help, **kwargs))
-    else:
-        raise Exception("NIY: "+repr(obj))
-    return parser
 
-def run(obj, *args, **kwargs):
-    """Parse a Argument Parser definition and run it.
+def cli_decorator(cli_deco=None, *, single=False):
+    def wrapped_wrapper(deco):
+        @functools.wraps(deco)
+        def wrapper(*args, **kwargs):
+            def decorator(command):
+                if not isinstance(command, CliMeta):
+                    command = CliMeta.wrap_function(command)
+                try:
+                    options = command.__cli_options__
+                except AttributeError:
+                    command.__cli_options__ = dict()
+                if single:
+                    options[deco.__name__] = deco(*args, **kwargs)
+                else:
+                    try:
+                        option = options[deco.__name__]
+                    except KeyError:
+                        option = []
+                        options[deco.__name__] = option
+                    option.append(deco(*args, **kwargs))
+                return command
+            return decorator
+        return staticmethod(wrapper)
+    if cli_deco is None:
+        return wrapped_wrapper
+    return wrapped_wrapper(cli_deco)
 
-    :params:
-      args:     Run function with these additional positional arguments.
-      kwargs:   Run function with these additional keyword arguments.
-                Those can be overwritten by the arguments from
-                the parser. However, if '_override' is a dict
-                in kwargs, those elements will overwrite even these.
 
-    Example:
-    g = run(obj)
-    args, kwargs = next(g)
-    # Do something with the arguments
-    returncode = g.send((args, kwargs))
+class Cli(metaclass=CliMeta):
 
-    """
-    parser = parse(obj)
-    override_kwargs = kwargs.pop('_override', {})
-    kwargs.update(vars(parser.parse_args()))
-    kwargs.update(override_kwargs)
-    args, kwargs = yield (args, kwargs)
-    try:
-        func = kwargs.pop('__func')
-    except KeyError:
-        yield parser.print_usage()
-    else:
-        yield func(*args, **kwargs)
+    __cli_options__: ClassVar[Dict[str, List[Any]]]
 
-def main(obj_or_name):
-    name = obj_or_name if isinstance(obj_or_name, str) else 'main'
-    def decorator(obj):
-        try:
-            mod = sys.modules[obj.__module__]
-        except KeyError:
-            pass
-        else:
-            def main(hook, *args, **kwargs):
-                g = run(obj, *args, **kwargs)
-                return g.send(hook(*next(g)))
-            main.hook = lambda args, kwargs: (args, kwargs)
-            def hook(h):
-                main.hook = h
-                return h
-            wrapper = functools.wraps(main)(
-                lambda *args, **kwargs: main(main.hook, *args, **kwargs))
-            wrapper.hook = hook
-            setattr(mod, name, wrapper)
-        return obj
+    @cli_decorator(single=True)
+    def parser(*args, **kwargs):
+        # signature = inspect.signature(argparse.ArgumentParser)
+        # return signature.bind(*args, **kwargs)
+        return args, kwargs
 
-    if isinstance(obj_or_name, str):
-        return decorator
-    return decorator(obj_or_name)
+    @cli_decorator
+    def group(name: str, title: str=None, description: str=None):
+        return name, dict(title=title, description=description)
+
+    @cli_decorator
+    def mutually_exclusive(name: str, required: bool=False):
+        return name, dict(required=required)
+
+    @cli_decorator(single=True)
+    def subparsers(*args, **kwargs):
+        return args, kwargs
+
+    @cli_decorator
+    def alias(name: str):
+        return name
