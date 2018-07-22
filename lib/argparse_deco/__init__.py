@@ -1,3 +1,4 @@
 # HIC FASCIS PYTHONIS EST.
 
-from .cli import Cli, Arg, Group  # noqa
+from .arguments import Arg, Group  # noqa
+from .cli import Cli  # noqa
