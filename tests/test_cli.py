@@ -20,22 +20,41 @@
 import pytest
 
 from argparse_deco import cli
-from argparse_deco.cli import CLI
+from argparse_deco.cli import CommandDecorator, default, CLI
 
 
 _marker = object()
 
+class TestCommandDecorator:
 
-class TestCli_decorator:
-    pass
+    def test__init__(self):
+        def bogus():
+            pass
+        cmd_deco = CommandDecorator(bogus, single=23, subscriptable=99)
+        assert cmd_deco.name == "bogus"
+        assert cmd_deco.owner is "CLI"
+        assert cmd_deco.cli_deco is bogus
+        assert cmd_deco.single is 23
+        assert cmd_deco.key_args == ()
+        assert cmd_deco.subscriptable is 99
+
+    def test__repr__(self):
+        @CommandDecorator
+        def foo(bar: str, baz: int=23):
+            pass
+        assert repr(foo) == "<CommandDecorator CLI.foo(bar:str, baz:int=23)>"
+
+
+def test_default():
+    assert default(23, 47, foo=3, baz=112) == ((23, 47), dict(foo=3, baz=112))
 
 class TestCLI:
 
-    def test__new__(self, mocker):
-        mock_command = mocker.patch.object(
-            cli, 'Command', return_value=_marker)
-        assert CLI("foo") is _marker
-        mock_command.assert_called_once_with("foo")
+    # def test__new__(self, mocker):
+    #     mock_command = mocker.patch.object(
+    #         cli, 'Command', return_value=_marker)
+    #     assert CLI("foo", 1) is _marker
+    #     mock_command.assert_called_once_with("foo")
 
     def test_parser(self):
         @CLI.parser(23, 3, foo=2, bar=77)

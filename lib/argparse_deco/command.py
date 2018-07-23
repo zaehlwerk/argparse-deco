@@ -21,10 +21,38 @@
 
 from collections.abc import MutableMapping
 import argparse
+import functools
 import inspect
-from typing import Any, Dict, Union, Tuple
+from typing import Any, List, Dict, Union, Tuple
 
 from .arguments import Arg
+
+class CommandRunner:
+
+    parser: argparse.ArgumentParser
+    ns: argparse.Namespace
+
+    def __init__(self, namespace, **kwargs):
+        self.ns = namespace
+        self.parser = namespace._parser
+        vars(self).update(kwargs)
+
+    def __call__(self):
+        try:
+            func = self.ns._func
+        except AttributeError:
+            return self.parser.print_usage()
+
+        args = ()
+        kwargs = {}
+        for i, name in enumerate(inspect.signature(func).parameters):
+            if i == 0 and name == 'self':
+                args = (self,)
+            elif name in vars(self.ns):
+                kwargs[name] = getattr(self.ns, name)
+            elif name in vars(self):
+                kwargs[name] = getattr(self, name)
+        return func(*args, **kwargs)
 
 
 class Command(MutableMapping):
@@ -40,16 +68,30 @@ class Command(MutableMapping):
     # subcommands: Dict[str, Command]
 
     def __init__(self, definition: Union[callable, type]):
-        if not inspect.isfunction(definition) and \
-           not inspect.isclass(definition):
+        if inspect.isclass(definition):
+           self.definition = definition
+        elif inspect.isfunction(definition):
+           self.definition = type(
+               definition.__name__, (), dict(
+                   __doc__=definition.__doc__,
+                   __module__=definition.__module__,
+                   __qualname__=definition.__qualname__,
+                   __call__=definition)
+           )
+        else:
             raise TypeError(
                 f"{definition!r} is neither a class nor a function")
-        self.definition = definition
+
         self.options = dict()
-        self.subcommands = dict(
-            (name, Command(attr)) for name, attr in vars(definition).items()
-            if not name.startswith('__') and (
-                inspect.isfunction(attr) or inspect.isclass(attr)))
+
+        def subcommands():
+            for name, attr in vars(definition).items():
+                if not name.startswith('__'):
+                    if isinstance(attr, Command):
+                        yield name, attr
+                    elif inspect.isfunction(attr) or inspect.isclass(attr):
+                        yield name, Command(attr)
+        self.subcommands = dict(subcommands())
 
     @property
     def name(self) -> str:
@@ -91,26 +133,39 @@ class Command(MutableMapping):
             kwargs['description'] = kwargs.pop(
                 'description', self.definition.__doc__)
         parser = factory(*args, **kwargs)
+        parser.set_defaults(_parser=parser)
         self.setup_arguments(parser)
         self.setup_subparsers(parser)
         return parser
 
     def setup_arguments(self, parser):
         """process command's arguments"""
-        function = self.definition if inspect.isfunction(self.definition) \
-            else self.definition.__call__
+        function = self.definition.__call__
+
+        groups = dict()
+        for name, kwargs in reversed(self.options.get('group', ())):
+            groups[name] = parser.add_argument_group(**kwargs)
+        for name, kwargs in reversed(
+                self.options.get('mutually_exclusive', ())):
+            if name in groups:
+                raise argparse.ArgumentError(
+                    None, "A regular group cannot be mutually exclusive: "
+                    f"{name}")
+            groups[name] = parser.add_mutually_exclusive_group(**kwargs)
+        for group_name, args, kwargs in reversed(
+                self.options.get('argument', ())):
+            if group_name:
+                try:
+                    group = groups[group_name]
+                except KeyError:
+                    group = parser.add_argument_group()
+                    groups[group_name] = group
+                group.add_argument(*args, **kwargs)
+            else:
+                parser.add_argument(*args, **kwargs)
+
         if inspect.isfunction(function):
             signature = inspect.signature(function)
-            groups = dict()
-            for name, kwargs in reversed(self.options.get('group', ())):
-                groups[name] = parser.add_argument_group(**kwargs)
-            for name, kwargs in reversed(
-                    self.options.get('mutually_exclusive', ())):
-                if name in groups:
-                    raise argparse.ArgumentError(
-                        None, "A regular group cannot be mutually exclusive: "
-                        f"{name}")
-                groups[name] = parser.add_mutually_exclusive_group(**kwargs)
             for name, parameter in signature.parameters.items():
                 argument = parameter.annotation
                 if isinstance(argument, Arg):
@@ -127,12 +182,14 @@ class Command(MutableMapping):
                     argument.apply(group, name, default)
 
             # setup default action
-            parser.set_defaults(__func=function)
+            parser.set_defaults(_func=function)
 
     def setup_subparsers(self, parser):
         """process subparsers"""
         if 'subparsers' in self.options or self.subcommands:
             args, kwargs = self.options.get('subparsers', ((), {}))
+            # kwargs['required'] = kwargs.pop(
+            #     'required', not inspect.isfunction(self.definition.__call__))
             subparsers = parser.add_subparsers(*args, **kwargs)
             for name, command in self.subcommands.items():
                 command.setup_parser(subparsers.add_parser, name)
@@ -141,39 +198,12 @@ class Command(MutableMapping):
     def parser(self):
         return self.setup_parser()
 
-    def run(self, *args, cli_args: Tuple[str]=None, **kwargs):
-        """Parse a Argument Parser definition and run it.
+    def __call__(self, args: List[str]=None, **kwargs):
+        """Parse `args` and run the fitting command.
 
         :params:
-          args:          Run function with these additional positional
-                         arguments.
-          cli_args:      Arguments to parse. Defaults to sys.args
-          kwargs:        Run function with these additional keyword arguments.
-                         Those can be overwritten by the arguments from
-                         the parser. However, if '_override' is a dict
-                         in kwargs, those elements will overwrite even these.
-
-        Example:
-        g = run(obj)
-        args, kwargs = next(g)
-        # Do something with the arguments
-        returncode = g.send((args, kwargs))
+           args:     List of command line arguments for argument parser
+           kwargs:   Additional keywords
         """
-        parser = self.setup_parser()
-        override_kwargs = kwargs.pop('_override', {})
-        if cli_args:
-            kwargs.update(vars(parser.parse_args(cli_args)))
-        else:
-            kwargs.update(vars(parser.parse_args()))
-        kwargs.update(override_kwargs)
-        args, kwargs = yield (args, kwargs)
-        try:
-            func = kwargs.pop('__func')
-        except KeyError:
-            yield parser.print_usage()
-        else:
-            yield func(*args, **kwargs)
-
-    def __call__(self, *args, cli_args=None, **kwargs):
-        gen = self.run(*args, cli_args=cli_args, **kwargs)
-        return gen.send(next(gen))
+        Runner = self.options.get('command_runner', CommandRunner)
+        return Runner(self.parser.parse_args(args), **kwargs)()

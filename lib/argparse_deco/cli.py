@@ -19,64 +19,98 @@
 #
 """cli.py: Decorator based synctactic sugar for argparse"""
 
-import functools
-from typing import Union
+import inspect
+from typing import Type
 
-from .command import Command
+from .command import Command, CommandRunner
+
+class CommandDecorator:
+
+    def __init__(self, cli_deco: callable=None, *, single: bool=False,
+                 subscriptable: bool=False):
+        if cli_deco is None:
+            self.name = None
+        else:
+            self.name = cli_deco.__name__
+        self.owner = "CLI"
+        self.cli_deco = cli_deco
+        self.single = single
+        self.key_args = ()
+        self.subscriptable = subscriptable
+
+    def __repr__(self):
+        try:
+            signature = inspect.signature(self.cli_deco)
+        except TypeError:
+            signature = "(...)"
+        return f"<CommandDecorator {self.owner}.{self.name}{signature}>"
+
+    def __set_name__(self, owner, name: str):
+        self.owner = owner.__name__
+        self.name = name
+
+    def __getitem__(self, args):
+        if not self.subscriptable:
+            raise TypeError(f"{self!r} is not subscriptable")
+        cli_command = object.__new__(CommandDecorator)
+        vars(cli_command).update(vars(self))
+        cli_command.key_args = args
+        return cli_command
+
+    def __call__(self, *args, **kwargs):
+        if self.cli_deco is None:
+            self.cli_deco = args[0]
+            return self
+
+        if self.subscriptable:
+            args = tuple([self.key_args] + list(args))
+
+        def decorator(command):
+            if not isinstance(command, Command):
+                command = Command(command)
+            if self.single:
+                command.options[self.name] = self.cli_deco(*args, **kwargs)
+            else:
+                try:
+                    option = command.options[self.name]
+                except KeyError:
+                    option = []
+                    command.options[self.name] = option
+                option.append(self.cli_deco(*args, **kwargs))
+            return command
+        return decorator
 
 
-def cli_decorator(cli_deco=None, *, single=False):
-    def wrapped_wrapper(deco):
-        @functools.wraps(deco)
-        def wrapper(*args, **kwargs):
-            def decorator(command):
-                if not isinstance(command, Command):
-                    command = Command(command)
-                if single:
-                    command.options[deco.__name__] = deco(*args, **kwargs)
-                else:
-                    try:
-                        option = command.options[deco.__name__]
-                    except KeyError:
-                        option = []
-                        command.options[deco.__name__] = option
-                    option.append(deco(*args, **kwargs))
-                return command
-            return decorator
-        return wrapper
-    if cli_deco is None:
-        return wrapped_wrapper
-    return wrapped_wrapper(cli_deco)
+def default(*args, **kwargs):
+    return args, kwargs
 
 
 class CLI:
 
-    def __new__(cls, command: Union[callable, type]):
-        return Command(command)
+    def __new__(cls, *args, **kwargs):
+        if len(args) == 1 and not kwargs:
+            if isinstance(args[0], Command):
+                return args[0]
+            if inspect.isclass(args[0]) or inspect.isfunction(args[0]):
+                return Command(args[0])
+        return cls.parser(*args, **kwargs)
 
-    @staticmethod
-    @cli_decorator(single=True)
-    def parser(*args, **kwargs):
-        # signature = inspect.signature(argparse.ArgumentParser)
-        # return signature.bind(*args, **kwargs)
-        return args, kwargs
+    parser = CommandDecorator(default, single=True)
+    subparsers = CommandDecorator(default, single=True)
+    argument = CommandDecorator(default, subscriptable=True)
 
-    @staticmethod
-    @cli_decorator
+    @CommandDecorator
     def group(name: str, title: str=None, description: str=None):
         return name, dict(title=title, description=description)
 
-    @staticmethod
-    @cli_decorator
+    @CommandDecorator
     def mutually_exclusive(name: str, required: bool=False):
         return name, dict(required=required)
 
-    @staticmethod
-    @cli_decorator(single=True)
-    def subparsers(*args, **kwargs):
-        return args, kwargs
-
-    @staticmethod
-    @cli_decorator
+    @CommandDecorator
     def alias(name: str):
         return name
+
+    @CommandDecorator(single=True)
+    def command_runner(factory: Type[CommandRunner]):
+        return factory
