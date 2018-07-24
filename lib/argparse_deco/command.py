@@ -107,55 +107,70 @@ class Command(MutableMapping):
                 'description', self.definition.__doc__)
         parser = factory(*args, **kwargs)
         parser.set_defaults(_parser=parser)
-        self.setup_arguments(parser)
+
+        groups = dict(self.setup_deco_groups(parser))
+        gen = self.setup_arguments()
+        try:
+            group_name = next(gen)
+        except StopIteration:
+            pass
+        else:
+            while True:
+                if group_name is None:
+                    arg_parser = parser
+                elif group_name in groups:
+                    arg_parser = groups[group_name]
+                else:
+                    arg_parser = parser.add_argument_group(group_name)
+                    groups[group_name] = arg_parser
+
+                try:
+                    group_name = gen.send(arg_parser)
+                except StopIteration:
+                    break
+
         self.setup_subparsers(parser)
         return parser
 
-    def setup_arguments(self, parser):
-        """process command's arguments"""
-        function = self.definition.__call__
-
-        groups = dict()
+    def setup_deco_groups(self, parser):
+        """Setup argument groups defined by `CLI.group`
+        and `CLI.mutually_exclusive`"""
+        group_names = set()
         for name, kwargs in reversed(self.options.get('group', ())):
-            groups[name] = parser.add_argument_group(**kwargs)
+            group_names.add(name)
+            yield name, parser.add_argument_group(**kwargs)
         for name, kwargs in reversed(
                 self.options.get('mutually_exclusive', ())):
-            if name in groups:
+            if name in group_names:
                 raise argparse.ArgumentError(
                     None, "A regular group cannot be mutually exclusive: "
                     f"{name}")
-            groups[name] = parser.add_mutually_exclusive_group(**kwargs)
+            yield name, parser.add_mutually_exclusive_group(**kwargs)
+
+    def setup_arguments(self):
+        """process command's arguments"""
+
+        # setup decorator defined arguments
         for group_name, args, kwargs in reversed(
                 self.options.get('argument', ())):
-            if group_name:
-                try:
-                    group = groups[group_name]
-                except KeyError:
-                    group = parser.add_argument_group()
-                    groups[group_name] = group
-                group.add_argument(*args, **kwargs)
-            else:
-                parser.add_argument(*args, **kwargs)
+            parser = yield group_name
+            parser.add_argument(*args, **kwargs)
 
-        if inspect.isfunction(function):
-            signature = inspect.signature(function)
+        # setup signature defined arguments
+        func = self.definition.__call__
+        if inspect.isfunction(func):
+            signature = inspect.signature(func)
             for name, parameter in signature.parameters.items():
                 argument = parameter.annotation
                 if isinstance(argument, Arg):
                     default = None if parameter.default is parameter.empty \
                               else parameter.default
-                    try:
-                        group = groups[argument.group]
-                    except AttributeError:
-                        argument.apply(parser, name, default)
-                        continue
-                    except KeyError:
-                        group = parser.add_argument_group()
-                        groups[argument.group] = group
-                    argument.apply(group, name, default)
+                    parser = yield argument.group
+                    argument.apply(parser, name, default)
 
             # setup default action
-            parser.set_defaults(_func=function)
+            parser = yield
+            parser.set_defaults(_func=func)
 
     def setup_subparsers(self, parser):
         """process subparsers"""

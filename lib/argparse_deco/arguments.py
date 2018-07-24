@@ -38,6 +38,7 @@ class Arg(metaclass=type if HAS_PY37 else PEP560Meta):
     def __init__(self, *name_or_flags, **kwargs):
         self.name_or_flags = name_or_flags
         self.kwargs = kwargs
+        self.group = None
 
     def __call__(self, *name_or_flags, **kwargs):
         if name_or_flags:
@@ -46,10 +47,7 @@ class Arg(metaclass=type if HAS_PY37 else PEP560Meta):
         return self
 
     def __repr__(self) -> str:
-        try:
-            group = f"[{self.group!r}]"
-        except AttributeError:
-            group = ""
+        group = f"[{self.group!r}]" if self.group else ""
 
         def args():
             for s in self.name_or_flags:
