@@ -16,12 +16,20 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with argparse-deco. If not, see <http://www.gnu.org/licenses/>.
-#
-"""version.py: version info"""
 
-__author__ = "Gregor Giesen"
-__copyright__ = "Copyright 2018, Gregor Giesen"
-__credits__ = ["Gregor Giesen"]
-__license__ = "GPLv3"
-__version__ = "0.4.0"
-__maintainer__ = "Gregor Giesen"
+import pytest
+
+from argparse_deco import version
+
+def check(obj):
+    """Checks whether obj is a string and nonempty"""
+    return isinstance(obj, str) and obj
+
+def test_version():
+    assert check(version.__doc__)
+    assert check(version.__author__)
+    assert check(version.__copyright__)
+    assert all(check(item) for item in version.__credits__)
+    assert check(version.__license__)
+    assert check(version.__version__)
+    assert check(version.__maintainer__)

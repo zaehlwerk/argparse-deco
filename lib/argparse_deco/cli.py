@@ -35,7 +35,7 @@ class CommandDecorator:
         self.owner = "CLI"
         self.cli_deco = cli_deco
         self.single = single
-        self.key_args = ()
+        self.key_args = None
         self.subscriptable = subscriptable
 
     def __repr__(self):

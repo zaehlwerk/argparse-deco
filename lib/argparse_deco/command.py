@@ -21,38 +21,11 @@
 
 from collections.abc import MutableMapping
 import argparse
-import functools
 import inspect
-from typing import Any, List, Dict, Union, Tuple
+from typing import Any, List, Dict, Union
 
 from .arguments import Arg
-
-class CommandRunner:
-
-    parser: argparse.ArgumentParser
-    ns: argparse.Namespace
-
-    def __init__(self, namespace, **kwargs):
-        self.ns = namespace
-        self.parser = namespace._parser
-        vars(self).update(kwargs)
-
-    def __call__(self):
-        try:
-            func = self.ns._func
-        except AttributeError:
-            return self.parser.print_usage()
-
-        args = ()
-        kwargs = {}
-        for i, name in enumerate(inspect.signature(func).parameters):
-            if i == 0 and name == 'self':
-                args = (self,)
-            elif name in vars(self.ns):
-                kwargs[name] = getattr(self.ns, name)
-            elif name in vars(self):
-                kwargs[name] = getattr(self, name)
-        return func(*args, **kwargs)
+from .runner import CommandRunner
 
 
 class Command(MutableMapping):
