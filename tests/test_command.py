@@ -132,11 +132,48 @@ class TestCommand:
         mock_parser.assert_called_once_with(aliases=['bar', '32', '99'],
                                         description="@parser set")
 
-    def test_setup_arguments(self):
-        pass
+    def test_setup_subparsers(self, mocker):
+        class TestParser:
+            def add_subparsers(self, *args, **kwargs):
+                pass
+        mock_add_subparsers = mocker.patch.object(
+            TestParser, 'add_subparsers')
+        parser = TestParser()
+        class TestCommand(Command):
+            """Subclass for being able to patch methods"""
+            def setup_parser(self, func, name):
+                pass
+        @TestCommand
+        def foo():
+            pass
 
-    def test_setup_subcommands(self):
-        pass
+        # no 'subparsers'
+        assert foo.setup_subparsers(parser) is None
+        mock_add_subparsers.assert_not_called()
+
+        # subparsers options
+        foo.options['subparsers'] = (('foo', 'bar'), dict(baz=23, zoo=2))
+        assert foo.setup_subparsers(parser) is None
+        mock_add_subparsers.assert_called_once_with(
+            'foo', 'bar', baz=23, zoo=2)
+
+        # add subcommands
+        mock_add_subparsers.reset_mock()
+        del foo.options['subparsers']
+        command1 = TestCommand(lambda: None)
+        mock_setup_parser1 = mocker.patch.object(
+            command1, 'setup_parser')
+        command2 = TestCommand(lambda: None)
+        mock_setup_parser2 = mocker.patch.object(
+            command2, 'setup_parser')
+        foo.subcommands['command1'] = command1
+        foo.subcommands['command2'] = command2
+        assert foo.setup_subparsers(parser) is None
+        mock_add_subparsers.assert_called_once_with()
+        mock_setup_parser1.assert_called_with(
+            mock_add_subparsers.return_value.add_parser, 'command1')
+        mock_setup_parser2.assert_called_with(
+            mock_add_subparsers.return_value.add_parser, 'command2')
 
     def test_parser(self, mocker):
         def foo():

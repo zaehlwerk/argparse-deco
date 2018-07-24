@@ -19,7 +19,7 @@
 
 import pytest
 
-from argparse_deco.arguments import Arg, Flag
+from argparse_deco.arguments import Arg, Flag, Append, Count
 
 
 _marker = object()
@@ -62,3 +62,57 @@ class TestArg:
         arg.apply(parser, 'bogus', _marker)
         mock_add_argument.assert_called_once_with(
             34, 23, foo=21, bar=100, dest='bogus', default=_marker)
+
+
+class TestFlag:
+
+    def test_apply(self, mocker):
+        class Parser:
+            def add_argument(self, *args, **kwargs):
+                pass
+        parser = Parser()
+        mock_add_argument = mocker.patch.object(parser, 'add_argument')
+        flag = Flag(34, 23, foo=21, bar=100)
+        flag.apply(parser, 'bogus')
+        mock_add_argument.assert_called_once_with(
+            34, 23, action='store_true',
+            foo=21, bar=100, dest='bogus', default=False)
+        mock_add_argument.reset_mock()
+        flag.apply(parser, 'bogus', False)
+        mock_add_argument.assert_called_once_with(
+            34, 23, action='store_true',
+            foo=21, bar=100, dest='bogus', default=False)
+        mock_add_argument.reset_mock()
+        flag.apply(parser, 'bogus', True)
+        mock_add_argument.assert_called_once_with(
+            34, 23, action='store_false',
+            foo=21, bar=100, dest='bogus', default=True)
+
+class TestAppend:
+
+    def test_apply(self, mocker):
+        class Parser:
+            def add_argument(self, *args, **kwargs):
+                pass
+        parser = Parser()
+        mock_add_argument = mocker.patch.object(parser, 'add_argument')
+        append = Append(34, 23, foo=21, bar=100)
+        append.apply(parser, 'bogus')
+        mock_add_argument.assert_called_once_with(
+            34, 23, action='append',
+            foo=21, bar=100, dest='bogus')
+
+
+class TestCount:
+
+    def test_apply(self, mocker):
+        class Parser:
+            def add_argument(self, *args, **kwargs):
+                pass
+        parser = Parser()
+        mock_add_argument = mocker.patch.object(parser, 'add_argument')
+        count = Count(34, 23, foo=21, bar=100)
+        count.apply(parser, 'bogus')
+        mock_add_argument.assert_called_once_with(
+            34, 23, action='count',
+            foo=21, bar=100, dest='bogus')

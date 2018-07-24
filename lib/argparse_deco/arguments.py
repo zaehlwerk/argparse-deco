@@ -21,7 +21,7 @@
 
 from .compat import HAS_PY37, PEP560Meta
 
-__all__ = ('Arg', 'Flag', 'Counter')
+__all__ = ('Arg', 'Flag', 'Append', 'Count')
 
 
 class Arg(metaclass=type if HAS_PY37 else PEP560Meta):
@@ -74,7 +74,7 @@ class Flag(Arg):
         args = self.name_or_flags
         kwargs = self.kwargs
         kwargs['dest'] = name
-        kwargs['action'] = 'store_true' if default in (True, None) \
+        kwargs['action'] = 'store_true' if default in (False, None) \
                            else 'store_false'
         kwargs['default'] = bool(default)
         parser.add_argument(*args, **kwargs)
@@ -90,7 +90,7 @@ class Append(Arg):
         parser.add_argument(*args, **kwargs)
 
 
-class Counter(Arg):
+class Count(Arg):
     """Count flags"""
 
     def apply(self, parser, name: str, default=None) -> None:
