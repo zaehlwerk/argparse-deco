@@ -19,7 +19,6 @@
 #
 """command.py: Wrapper class for parsing a definition"""
 
-from collections.abc import MutableMapping
 import argparse
 import inspect
 from typing import Any, List, Dict, Union
@@ -27,20 +26,19 @@ from typing import Any, List, Dict, Union
 from .arguments import Arg
 from .runner import CommandRunner
 
-
-class Command(MutableMapping):
+class Command:
     """Wraps a command (class or function) for creating
     an ArgumentParser instance. Additionally it can pass these
     ArgumentParser's arguments to the function (or the class'
     __call__ method) and execute it."""
 
-    __slots__ = ('definition', 'options', 'subcommands')
+    __slots__ = ('definition', 'options','parent', 'subcommands')
 
     command: Union[callable, type]
     options: Dict[str, Any]
     # subcommands: Dict[str, Command]
 
-    def __init__(self, definition: Union[callable, type]):
+    def __init__(self, definition: Union[callable, type], parent=None):
         if inspect.isclass(definition):
            self.definition = definition
         elif inspect.isfunction(definition):
@@ -56,42 +54,31 @@ class Command(MutableMapping):
                 f"{definition!r} is neither a class nor a function")
 
         self.options = dict()
+        self.parent = parent
 
         def subcommands():
             for name, attr in vars(definition).items():
                 if not name.startswith('__'):
                     if isinstance(attr, Command):
+                        attr.parent = self
                         yield name, attr
                     elif inspect.isfunction(attr) or inspect.isclass(attr):
-                        yield name, Command(attr)
+                        yield name, Command(attr, self)
         self.subcommands = dict(subcommands())
 
     @property
     def name(self) -> str:
         return self.definition.__name__
 
-    # Subcommand access by instance's keys
-    def __getitem__(self, key: str):
-        return self.subcommands[key]
-
-    def __setitem__(self, key: str, command: Union[callable, type]):
-        self.subcommands[key] = Command(command)
-
-    def __delitem__(self, key: str):
-        del self.subcommands[key]
-
-    def __iter__(self):
-        return iter(self.subcommands)
-
-    def __len__(self):
-        return len(self.subcommands)
-
     def subcommand(self, definition):
         """Decorator for adding a subcommand"""
-        command = definition if isinstance(definition, Command) \
-            else Command(definition)
-        self.subcommands[definition.__name__] = command
-        return command
+        if isinstance(definition, Command):
+            subcommand = definition
+            subcommand.parent = self
+        else:
+            subcommand = Command(definition, self)
+        self.subcommands[definition.__name__] = subcommand
+        return subcommand
 
     # Parsing
     def setup_parser(self, factory=argparse.ArgumentParser, name=None):
@@ -105,6 +92,9 @@ class Command(MutableMapping):
         if self.definition.__doc__:
             kwargs['description'] = kwargs.pop(
                 'description', self.definition.__doc__)
+            if self.parent:
+                kwargs['help'] = kwargs.pop(
+                    'help', self.definition.__doc__)
         parser = factory(*args, **kwargs)
         parser.set_defaults(_parser=parser)
 

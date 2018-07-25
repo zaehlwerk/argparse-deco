@@ -129,6 +129,8 @@ usage: prog [-h] [--foo] {a,b} ...
 <BLANKLINE>
 positional arguments:
   {a,b}       sub-command help
+    a         a help
+    b         b help
 <BLANKLINE>
 optional arguments:
   -h, --help  show this help message and exit
@@ -159,11 +161,12 @@ usage: prog [-h] {foo,oof} ...
 <BLANKLINE>
 positional arguments:
   {foo,oof}
+    foo       foo subcommand
 <BLANKLINE>
 optional arguments:
   -h, --help  show this help message and exit
 
->>> prog.parser.parse_args(['foo', '-h'])
+>>> prog.parser.parse_args(['foo', '--help'])
 Traceback (most recent call last):
 ...
 SystemExit: 0
