@@ -28,6 +28,7 @@ _marker = object()
 class TestCommandDecorator:
 
     def test__init__(self):
+        assert CommandDecorator().name is None
         def bogus():
             pass
         cmd_deco = CommandDecorator(bogus, single=23, subscriptable=99)
@@ -193,3 +194,10 @@ class TestCLI:
             pass
         assert isinstance(foo, Command)
         assert foo.options['alias'] == ['foo2', 'foo']
+
+    def test_command_runner(self):
+        @CLI.command_runner(_marker)
+        def foo():
+            pass
+        assert isinstance(foo, Command)
+        assert foo.options['command_runner'] == _marker

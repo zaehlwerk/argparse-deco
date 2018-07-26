@@ -77,7 +77,7 @@ class Command:
             subcommand.parent = self
         else:
             subcommand = Command(definition, self)
-        self.subcommands[definition.__name__] = subcommand
+        self.subcommands[subcommand.definition.__name__] = subcommand
         return subcommand
 
     # Parsing
