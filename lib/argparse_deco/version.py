@@ -23,5 +23,5 @@ __author__ = "Gregor Giesen"
 __copyright__ = "Copyright 2018, Gregor Giesen"
 __credits__ = ["Gregor Giesen"]
 __license__ = "GPLv3"
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __maintainer__ = "Gregor Giesen"
