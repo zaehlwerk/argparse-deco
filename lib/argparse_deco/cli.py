@@ -26,8 +26,7 @@ from .command import Command, CommandRunner
 
 class CommandDecorator:
 
-    def __init__(self, cli_deco: callable=None, *, single: bool=False,
-                 subscriptable: bool=False):
+    def __init__(self, cli_deco: callable=None, *, single: bool=False):
         if cli_deco is None:
             self.name = None
         else:
@@ -35,8 +34,6 @@ class CommandDecorator:
         self.owner = "CLI"
         self.cli_deco = cli_deco
         self.single = single
-        self.key_args = None
-        self.subscriptable = subscriptable
 
     def __repr__(self):
         try:
@@ -49,21 +46,10 @@ class CommandDecorator:
         self.owner = owner.__name__
         self.name = name
 
-    def __getitem__(self, args):
-        if not self.subscriptable:
-            raise TypeError(f"{self!r} is not subscriptable")
-        cli_command = object.__new__(CommandDecorator)
-        vars(cli_command).update(vars(self))
-        cli_command.key_args = args
-        return cli_command
-
     def __call__(self, *args, **kwargs):
         if self.cli_deco is None:
             self.cli_deco = args[0]
             return self
-
-        if self.subscriptable:
-            args = tuple([self.key_args] + list(args))
 
         def decorator(command):
             if not isinstance(command, Command):
@@ -97,7 +83,10 @@ class CLI:
 
     parser = CommandDecorator(default, single=True)
     subparsers = CommandDecorator(default, single=True)
-    argument = CommandDecorator(default, subscriptable=True)
+
+    @CommandDecorator
+    def argument(*args, group=None, **kwargs):
+        return group, args, kwargs
 
     @CommandDecorator
     def group(name: str, title: str=None, description: str=None):

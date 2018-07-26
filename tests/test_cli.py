@@ -31,19 +31,18 @@ class TestCommandDecorator:
         assert CommandDecorator().name is None
         def bogus():
             pass
-        cmd_deco = CommandDecorator(bogus, single=23, subscriptable=99)
+        cmd_deco = CommandDecorator(bogus, single=23)
         assert cmd_deco.name == "bogus"
         assert cmd_deco.owner is "CLI"
         assert cmd_deco.cli_deco is bogus
         assert cmd_deco.single is 23
-        assert cmd_deco.key_args is None
-        assert cmd_deco.subscriptable is 99
 
     def test__repr__(self):
         @CommandDecorator
         def foo(bar: str, baz: int=23):
             pass
         assert repr(foo) == "<CommandDecorator CLI.foo(bar:str, baz:int=23)>"
+        assert repr(CommandDecorator()) == "<CommandDecorator CLI.None(...)>"
 
     def test__set_name__(self):
         foo = CommandDecorator()
@@ -53,21 +52,6 @@ class TestCommandDecorator:
             bar = foo
         assert foo.name == "bar"
         assert foo.owner == "A"
-
-    def test__getitem__(self):
-        foo = CommandDecorator()
-        with pytest.raises(TypeError):
-            foo["bar"]
-
-        foo = CommandDecorator(subscriptable=True)
-        assert foo.key_args == None
-        bar = foo['bar']
-        assert isinstance(bar, CommandDecorator)
-        for name in vars(foo):
-            if name == 'key_args':
-                assert bar.key_args == 'bar'
-            else:
-                assert getattr(foo, name) == getattr(bar, name)
 
     def test__call__(self, mocker):
         # cli_deco is None
@@ -88,20 +72,13 @@ class TestCommandDecorator:
         assert bar.options['bogus'] == [_marker]
         mock_cli_deco.assert_called_once_with(23, 42, bar=3, baz=99)
 
-        mock_cli_deco.reset_mock()
-        foo.subscriptable = True
-        foo.key_args = "keyz"
-        assert foo("3", 7, buz=2)(bar) is bar
-        assert bar.options['bogus'] == [_marker, _marker]
-        mock_cli_deco.assert_called_once_with("keyz", "3", 7, buz=2)
-
         # Test single == True
         mock_cli_deco.reset_mock()
         foo.single = True
         foo.key_args = "keyz2"
         assert foo(33, 18, boo=3)(bar) is bar
         assert bar.options['bogus'] is _marker
-        mock_cli_deco.assert_called_once_with("keyz2", 33, 18, boo=3)
+        mock_cli_deco.assert_called_once_with(33, 18, boo=3)
 
 
 def test_default():
@@ -155,6 +132,19 @@ class TestCLI:
             pass
         assert isinstance(foo, Command)
         assert foo.options['parser'] == ((23, 3), dict(foo=2, bar=77))
+
+    def test_argument(self):
+        @CLI.argument('foo3', "bar3", foo="baz3")
+        @CLI.argument('foo2', group='grp2')
+        @CLI.argument('foo2', "bar2", baz="baz2", group='grp3')
+        def foo():
+            pass
+        assert isinstance(foo, Command)
+        assert foo.options['argument'] == [
+            ('grp3', ('foo2', "bar2"), dict(baz="baz2")),
+            ('grp2', ('foo2',), dict()),
+            (None, ('foo3', "bar3"), dict(foo="baz3"))
+        ]
 
     def test_group(self):
         @CLI.group('foo3', "bar3", "baz3")
