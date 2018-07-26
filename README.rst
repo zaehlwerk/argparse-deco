@@ -9,7 +9,9 @@ Kevin L. Mitchell's **cli_tools**
 code.
 
 Its main difference is the possibility to abuse Python's class
-syntax to define complex CLI tools with nested subcommands.
+syntax to define complex CLI tools with nested subcommands and
+the use of `inspect.signature` to autogenerate a command's arguments
+from a function's signature.
 
 Simple CLI
 ==========
@@ -165,8 +167,3 @@ positional arguments:
 <BLANKLINE>
 optional arguments:
   -h, --help  show this help message and exit
-
->>> prog.parser.parse_args(['foo', '--help'])
-Traceback (most recent call last):
-...
-SystemExit: 0
