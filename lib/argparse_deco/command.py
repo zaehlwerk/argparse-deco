@@ -32,7 +32,7 @@ class Command:
     ArgumentParser's arguments to the function (or the class'
     __call__ method) and execute it."""
 
-    __slots__ = ('definition', 'options','parent', 'subcommands')
+    __slots__ = ('definition', 'options', 'parent', 'subcommands')
 
     command: Union[callable, type]
     options: Dict[str, Any]
