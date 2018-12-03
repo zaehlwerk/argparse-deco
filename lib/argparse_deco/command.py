@@ -24,7 +24,6 @@ import inspect
 from typing import Any, List, Dict, Union
 
 from .arguments import Arg
-from .runner import CommandRunner
 
 class Command:
     """Wraps a command (class or function) for creating
@@ -34,8 +33,9 @@ class Command:
 
     __slots__ = ('definition', 'options', 'parent', 'subcommands')
 
-    command: Union[callable, type]
+    # definition: type
     options: Dict[str, Any]
+    # parent: Command
     # subcommands: Dict[str, Command]
 
     def __init__(self, definition: Union[callable, type], parent=None):
@@ -84,6 +84,7 @@ class Command:
     def setup_parser(self, factory=argparse.ArgumentParser, name=None):
         """creates the ArgumentParser and calls setup_{arguments,subparsers}"""
         args, kwargs = self.options.get('parser', ((), {}))
+
         if not args and name:
             args = (name,)
 
@@ -172,16 +173,28 @@ class Command:
             for name, command in self.subcommands.items():
                 command.setup_parser(subparsers.add_parser, name)
 
-    @property
-    def parser(self):
-        return self.setup_parser()
-
-    def __call__(self, args: List[str]=None, **kwargs):
+    def __call__(self, args: List[str]=None):
         """Parse `args` and run the fitting command.
 
         :params:
            args:     List of command line arguments for argument parser
-           kwargs:   Additional keywords
         """
-        Runner = self.options.get('command_runner', CommandRunner)
-        return Runner(self.parser.parse_args(args), **kwargs)()
+        parser = self.setup_parser()
+        namespace = parser.parse_args(args)
+
+        try:
+            func = namespace._func
+        except AttributeError:
+            return parser.print_usage()
+
+        args = ()
+        kwargs = {}
+        for i, name in enumerate(inspect.signature(func).parameters):
+            if i == 0 and name == 'self':
+                try:
+                    args = (self.options['bind'](parser, namespace),)
+                except KeyError:
+                    args = (namespace,)
+            elif name in vars(namespace):
+                kwargs[name] = getattr(namespace, name)
+        return func(*args, **kwargs)

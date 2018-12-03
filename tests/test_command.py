@@ -376,45 +376,5 @@ class TestCommand:
         mock_setup_parser2.assert_called_with(
             mock_add_subparsers.return_value.add_parser, 'command2')
 
-    def test_parser(self, mocker):
-        def foo():
-            pass
-        mock_parser = mocker.patch.object(
-            Command, 'setup_parser', return_value=_marker)
-        command = Command(foo)
-        assert command.parser is _marker
-        mock_parser.assert_called_once_with()
-
     def test__call__(self, mocker):
-        class Parser:
-            def parse_args():
-                pass
-        mock_parse_args = mocker.patch.object(
-            Parser, 'parse_args', return_value=_marker)
-        parser = Parser()
-        mock_setup_parser = mocker.patch.object(
-            Command, 'setup_parser', return_value=parser)
-        class Runner:
-            pass
-        mock_runner = mocker.patch.object(
-            Runner, '__init__', return_value=None)
-        mock_runner_call = mocker.patch.object(
-            Runner, '__call__', return_value=_marker2)
-
-        # without arguments
-        @Command
-        def foo():
-            pass
-        foo.options['command_runner'] = Runner
-        assert foo() is _marker2
-        mock_runner.assert_called_once_with(_marker)
-        mock_runner_call.assert_called_once_with()
-        mock_parse_args.assert_called_once_with(None)
-
-        mock_runner.reset_mock()
-        mock_runner_call.reset_mock()
-        mock_parse_args.reset_mock()
-        assert foo(['bogus', 'bar'], foo=32, bar=1) is _marker2
-        mock_runner.assert_called_once_with(_marker, foo=32, bar=1)
-        mock_runner_call.assert_called_once_with()
-        mock_parse_args.assert_called_once_with(['bogus', 'bar'])
+        raise NotImplementedError

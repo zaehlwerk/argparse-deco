@@ -41,7 +41,7 @@ class TestCommandDecorator:
         @CommandDecorator
         def foo(bar: str, baz: int=23):
             pass
-        assert repr(foo) == "<CommandDecorator CLI.foo(bar:str, baz:int=23)>"
+        assert repr(foo) == "<CommandDecorator CLI.foo(bar: str, baz: int = 23)>"
         assert repr(CommandDecorator()) == "<CommandDecorator CLI.None(...)>"
 
     def test__set_name__(self):
@@ -184,10 +184,3 @@ class TestCLI:
             pass
         assert isinstance(foo, Command)
         assert foo.options['alias'] == ['foo2', 'foo']
-
-    def test_command_runner(self):
-        @CLI.command_runner(_marker)
-        def foo():
-            pass
-        assert isinstance(foo, Command)
-        assert foo.options['command_runner'] == _marker

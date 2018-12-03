@@ -22,7 +22,7 @@
 import inspect
 from typing import Type
 
-from .command import Command, CommandRunner
+from .command import Command
 
 class CommandDecorator:
 
@@ -84,6 +84,10 @@ class CLI:
     parser = CommandDecorator(default, single=True)
     subparsers = CommandDecorator(default, single=True)
 
+    @CommandDecorator(single=True)
+    def bind(executor_class: type):
+        return executor_class
+
     @CommandDecorator
     def argument(*args, group=None, **kwargs):
         return group, args, kwargs
@@ -99,7 +103,3 @@ class CLI:
     @CommandDecorator
     def alias(name: str):
         return name
-
-    @CommandDecorator(single=True)
-    def command_runner(factory: Type[CommandRunner]):
-        return factory
